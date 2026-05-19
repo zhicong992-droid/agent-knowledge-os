@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  # ── Neo4j 知识图谱数据库 ──────────────────────
+  neo4j:
+    image: neo4j:5.28-community
+    container_name: agentknowledgeos-neo4j
+    ports:
+      - "7474:7474"   # Web UI
+      - "7687:7687"   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── ChromaDB 向量数据库 ───────────────────────
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: agentknowledgeos-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+
+  # ── Kafka (CDC 消息队列) ──────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    container_name: agentknowledgeos-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    container_name: agentknowledgeos-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+
+  # ── Python API 服务 ───────────────────────────
+  api:
+    build:
+      context: ./python
+      dockerfile: Dockerfile
+    container_name: agentknowledgeos-api
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./python/.env
+    depends_on:
+      - neo4j
+      - chromadb
+      - kafka
+    volumes:
+      - ./python:/app
+      - uploads:/app/uploads
+
+volumes:
+  neo4j_data:
+  chroma_data:
+  uploads:
