@@ -117,7 +117,35 @@ class VectorStoreService:
             if ids:
                 self._store.delete(ids=ids)
             return len(ids)
-        return 0
+
+        # PGVector stores metadata as JSONB.  Use the store's SQLAlchemy
+        # binding when available so deletion remains scoped to this collection.
+        try:
+            from sqlalchemy import text
+
+            engine = getattr(self._store, "_bind", None) or getattr(self._store, "_engine", None)
+            if engine is None:
+                connection_string = getattr(self._store, "connection_string", None) or settings.pgvector_dsn
+                from sqlalchemy import create_engine
+                engine = create_engine(connection_string)
+
+            collection_name = getattr(self._store, "collection_name", self.COLLECTION_NAME)
+            with engine.begin() as connection:
+                result = connection.execute(
+                    text(
+                        """
+                        DELETE FROM langchain_pg_embedding AS e
+                        USING langchain_pg_collection AS c
+                        WHERE e.collection_id = c.uuid
+                          AND c.name = :collection_name
+                          AND e.cmetadata ->> 'doc_id' = :doc_id
+                        """
+                    ),
+                    {"collection_name": collection_name, "doc_id": doc_id},
+                )
+                return int(result.rowcount or 0)
+        except Exception:
+            return 0
 
     async def get_stats(self) -> dict:
         """获取向量库统计信息"""
