@@ -307,18 +307,6 @@ class QAAgent:
         contexts: list[RetrievedContext],
         intent: QueryIntent,
     ) -> tuple[str, list[str]]:
-        if contexts:
-            top = contexts[0]
-            answer = (
-                f"根据检索结果，相关信息来自 {top.source}，"
-                f"内容指向：{top.content[:160]}"
-            )
-            return answer, [
-                f"识别问题意图: {intent.value}",
-                f"检索到 {len(contexts)} 条相关上下文",
-                "命中本地检索结果，直接生成引用式回答",
-            ]
-
         context_text = "\n\n".join(
             f"[来源 {i+1}: {c.source} | 类型: {c.retrieval_type} | 分数: {c.score:.2f}]\n{c.content}"
             for i, c in enumerate(contexts)
@@ -329,6 +317,10 @@ class QAAgent:
             f"向量检索: {sum(1 for c in contexts if c.retrieval_type == 'vector')} 条",
             f"图谱检索: {sum(1 for c in contexts if c.retrieval_type == 'graph')} 条",
         ]
+
+        if not contexts:
+            reasoning_steps.append("未检索到可用上下文，拒绝生成无依据答案")
+            return "抱歉，当前知识库中没有足够信息回答这个问题。", reasoning_steps
 
         messages = [
             SystemMessage(content=ANSWER_PROMPT),
