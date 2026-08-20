@@ -18,6 +18,7 @@ GraphRAG 混合检索管道 — 向量检索 + 图谱遍历 + 重排序
 from __future__ import annotations
 
 import json
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -81,10 +82,14 @@ class GraphRAGPipeline:
         混合检索入口
         并行执行向量检索和图谱检索，然后交叉重排序
         """
-        vector_results = await self._vector_search(query, top_k=top_k)
-        entities = await self._entity_linking(query)
-        subgraph_results = await self._subgraph_search(entities)
-        path_results = await self._path_search(entities)
+        vector_results, entities = await asyncio.gather(
+            self._vector_search(query, top_k=top_k),
+            self._entity_linking(query),
+        )
+        subgraph_results, path_results = await asyncio.gather(
+            self._subgraph_search(entities),
+            self._path_search(entities),
+        )
 
         all_results = vector_results + subgraph_results + path_results
 
